@@ -69,7 +69,6 @@ class Furniture:
         self.num_width_door = num_width_door
         self.vertices = []  # Initialize vertices with an empty list
         self.doorlines = []  # Initialize offset door lines with an empty list
-        self.offset_doorlines = []  # Initialize offset door lines with an empty list
         self.offset_polygon = None  # Initialize offset polygon with None
         self.room = None  # Initialize room attribute
 
@@ -122,7 +121,6 @@ class Furniture:
             largest = max(polygon.geoms, key=lambda p: p.area)
             polygon = largest
         offset_exterior_coords = list(polygon.exterior.coords)
-        from shapely.geometry import box
 
     def generate_non_intersecting_position(furniture, occupied_polygons, layout_width, layout_height, max_attempts=100):
         for _ in range(max_attempts):
@@ -196,21 +194,21 @@ class Room:
         self.furniture = furniture
         self.concave_hull = None  # Initialize concave hull attribute
         self.offset_polygon = None  # Initialize offset polygon with None
-        self.offset_doorlines =[]
+        self.doorlines =[]
 
-        def generate_offset_doorlines_rooms(self):
+        def generate_doorlines_rooms(self):
             if self.offset_polygon is None:
                 print("Offset polygon is not generated. Call generate_offset_polygon method first.")
                 return
 
-            offset_doorlines = []
+            doorlines = []
             # Convert the offset polygon's exterior coordinates to a list of tuples
             offset_exterior_coords = list(self.offset_polygon.exterior.coords)
             # Iterate over the exterior coordinates to create offset lines
             for i in range(len(offset_exterior_coords) - 1):
-                offset_doorlines.append([offset_exterior_coords[i], offset_exterior_coords[i + 1]])
+                doorlines.append([offset_exterior_coords[i], offset_exterior_coords[i + 1]])
             # Assign the offset lines to the room's attribute
-            self.offset_doorlines = offset_doorlines
+            self.doorlines = doorlines
 
     # Add a method to set room boundary vertices
     def set_vertices(self, vertices):
@@ -314,60 +312,28 @@ class Room:
             end_point = (offset_point[0] + normal_vector[0], offset_point[1] + normal_vector[1])
             doorlines.append([start_point, end_point])
         return doorlines
-
-    def generate_offset_lines(self):
-        if self.offset_polygon is None:
-            print("Offset polygon is not generated. Call generate_offset_polygon method first.")
-            return
-
-        offset_doorlines = []
-        # Convert the offset polygon's exterior coordinates to a list of tuples
-        offset_exterior_coords = list(self.offset_polygon.exterior.coords)
-        # Iterate over the exterior coordinates to create offset lines
-        for i in range(len(offset_exterior_coords) - 1):
-            offset_doorlines.append([offset_exterior_coords[i], offset_exterior_coords[i + 1]])
-        # Assign the offset lines to the room's attribute
-        self.offset_lines = offset_doorlines
-
-    #function to generate offset doorlines since travel lines start at offset doorlines.
-    def generate_offset_doorlines(self, doorlines, offset_distance):
-        offset_doorlines = []
-        for doorline in doorlines:
-            # Create LineString object from doorline vertices
-            doorline_line = LineString(doorline)
-            # Calculate the normal vector to the doorline
-            normal_vector = (doorline_line.coords[1][1] - doorline_line.coords[0][1],
-                             -(doorline_line.coords[1][0] - doorline_line.coords[0][0]))
-            # Calculate offset points along the normal vector
-            offset_point1 = (
-            doorline[0][0] + normal_vector[0] * offset_distance, doorline[0][1] + normal_vector[1] * offset_distance)
-            offset_point2 = (
-            doorline[1][0] + normal_vector[0] * offset_distance, doorline[1][1] + normal_vector[1] * offset_distance)
-            # Append the offset doorline
-            offset_doorlines.append([offset_point1, offset_point2])
-        return offset_doorlines
+    offset_distance = 1.1
     
-    
-    def generate_offset_doorlines_rooms(self):
+    def generate_doorlines_rooms(self):
         if self.offset_polygon is None:
             print("Offset polygon is not generated. Call generate_offset_polygon method first.")
             return
         
         num_doorlines = room.num_doorlines
-        rooms_offset_doorlines = []
+        rooms_doorlines = []
 
         # Generate doorlines for the room
         for _ in range(num_doorlines):
             # Generate random points along the room boundary
             point_on_boundary = random.choice(self.offset_polygon.exterior.coords)
             # Calculate a second point for the doorline by moving along the boundary
-            second_point = self.offset_polygon.exterior.interpolate( offset_distance, normalized=True)
+            second_point = self.offset_polygon.exterior.interpolate(1.1, normalized=True)
             doorline = [point_on_boundary, (second_point.x, second_point.y)]
-            rooms_offset_doorlines.append(doorline)
+            rooms_doorlines.append(doorline)
 
         # Assign the offset doorlines to the room's attribute
-        self.offset_doorlines = rooms_offset_doorlines
-        return rooms_offset_doorlines
+        self.doorlines = rooms_doorlines
+        return rooms_doorlines
 
     def generate_offset_polygon(self, buffer_distance=1.0):
         if not self.furniture:
@@ -548,14 +514,11 @@ for room in rooms:
     else:
         print(f"[Error] Offset polygon for room {room.room_name} not generated.")
 
-generate_offset_lines = Room.generate_offset_lines
-offset_distance = 1.1
+
 print(f"[Info] Room {room.room_name} has {len(room.furniture)} furniture items.")
 
 # Generate offset polygon and offset lines for each room
 for room in rooms:
-    room.generate_offset_polygon(offset_distance)
-    room.generate_offset_lines()
     room.generate_doorlines
 
 # function to constrain length and width during optimization
@@ -659,12 +622,12 @@ class Graph:
         self.vertices[vertex1].append(vertex2)
         self.vertices[vertex2].append(vertex1)
 
-offset_doorlines_graph = {}
+doorlines_graph = {}
 
 # Construct the offset doorlines graph
 for room in rooms:
-    for doorline in room.offset_doorlines:
-        offset_doorlines_graph[doorline] = []  # Initialize empty list of neighbors
+    for doorline in room.doorlines:
+        doorlines_graph[doorline] = []  # Initialize empty list of neighbors
 
 def euclidean_distance(point1, point2):
     x1, y1 = point1
@@ -673,14 +636,14 @@ def euclidean_distance(point1, point2):
 
 threshold_distance = 0.2
 # Populate the neighbors of each offset doorline for the visibility graph
-for doorline in offset_doorlines_graph:
-    for other_doorline in offset_doorlines_graph:
+for doorline in doorlines_graph:
+    for other_doorline in doorlines_graph:
         if doorline != other_doorline:  # Exclude self-connections
             # Check if the doorlines are close enough to be considered neighbors
             if euclidean_distance(doorline[0], other_doorline[0]) < threshold_distance:
-                offset_doorlines_graph[doorline].append(other_doorline)
+                doorlines_graph[doorline].append(other_doorline)
             if euclidean_distance(doorline[1], other_doorline[1]) < threshold_distance:
-                offset_doorlines_graph[doorline].append(other_doorline)
+                doorlines_graph[doorline].append(other_doorline)
 # Function to compute the visibility graph furniture from furniture vertices
 def compute_visibility_graph_furniture(furniture_list):
     visibility_graph_furniture = {}
@@ -772,7 +735,7 @@ def gather_start_goal_vertices(rooms):
     for room1 in rooms:
         for furniture1 in room1.furniture:
             if furniture1.furniture_name.lower() == "lobby":
-                for doorline1 in furniture1.offset_doorlines:
+                for doorline1 in furniture1.doorlines:
                     start_vertex = doorline1[0]
                     goal_vertex = doorline1[1]
                     all_start_goal_vertices_furniture.add(start_vertex)
@@ -781,7 +744,7 @@ def gather_start_goal_vertices(rooms):
             if room1 != room2:
                 for furniture2 in room2.furniture:
                     if furniture2.furniture_name.lower() == "lobby":
-                        for doorline2 in furniture2.offset_doorlines:
+                        for doorline2 in furniture2.doorlines:
                             start_vertex = doorline2[0]
                             goal_vertex = doorline2[1]
                             all_start_goal_vertices_rooms.add(start_vertex)
@@ -834,87 +797,76 @@ graph_rooms = generate_graph(all_vertices_rooms)
 
 # functions to find travel lines using visibility graph and A* algorithm
 def find_travel_lines_between_furniture(furniture_list, graph_furniture):
-    travel_lines_between_furniture = {}
-
-    # Iterate over each pair of furniture items
+    travel_lines_f = {}
     for furniture1 in furniture_list:
         for furniture2 in furniture_list:
             if furniture1 != furniture2:
-                # Choose either vertex as start or goal
-                for start_vertex in furniture1.offset_doorlines:
-                    for goal_vertex in furniture2.offset_doorlines:
-                        # Find the shortest path between start and goal vertices using the visibility graph
-                        shortest_path = a_star(graph_furniture, start_vertex, goal_vertex)
-
-                        # Convert the shortest path to a LineString
-                        shortest_line = LineString(shortest_path)
-
-                        # Add the shortest line between the two furniture items to the travel lines dictionary
-                        travel_lines_between_furniture[(furniture1, furniture2, start_vertex, goal_vertex)] = shortest_line
-
-    return travel_lines_between_furniture
+                for dl1 in getattr(furniture1, 'doorlines', []):
+                    for dl2 in getattr(furniture2, 'doorlines', []):
+                        for start in dl1:
+                            for end in dl2:
+                                try:
+                                    path = a_star(graph_furniture, start, end)
+                                    if path and len(path) > 1:
+                                        line = LineString(path)
+                                        travel_lines_f[(furniture1, furniture2, start, end)] = line
+                                except Exception:
+                                    continue
+    return travel_lines_f
 
 def find_travel_lines_between_rooms(rooms, graph_rooms):
-    travel_lines_between_rooms = {}
-
-    # Iterate over each pair of rooms
+    travel_lines_r = {}
     for room1 in rooms:
         for room2 in rooms:
             if room1 != room2:
-                # Choose either vertex as start or goal
-                for start_vertex in room1.offset_doorlines:
-                    for goal_vertex in room2.offset_doorlines:
-                        # Find the shortest path between start and goal vertices using the visibility graph
-                        shortest_path = a_star(graph_rooms, start_vertex, goal_vertex)
-
-                        # Convert the shortest path to a LineString
-                        shortest_line = LineString(shortest_path)
-
-                        # Add the shortest line between the two rooms to the travel lines dictionary
-                        travel_lines_between_rooms[(room1, room2, start_vertex, goal_vertex)] = shortest_line
-
-    return travel_lines_between_rooms
-
+                for dl1 in getattr(room1, 'doorlines', []):
+                    for dl2 in getattr(room2, 'doorlines', []):
+                        for start in dl1:
+                            for end in dl2:
+                                try:
+                                    path = a_star(graph_rooms, start, end)
+                                    if path and len(path) > 1:
+                                        line = LineString(path)
+                                        travel_lines_r[(room1, room2, start, end)] = line
+                                except Exception:
+                                    continue
+    return travel_lines_r
 
 # Compute travel lines between furniture
-travel_lines_between_furniture = find_travel_lines_between_furniture(furniture_list, graph_furniture)
+travel_lines_f = find_travel_lines_between_furniture(furniture_list, graph_furniture)
 
 # Print travel lines between furniture
 print("Travel lines between furniture:")
-for key, value in travel_lines_between_furniture.items():
+for key, value in travel_lines_f.items():
     print(f"Travel line between {key[0].furniture_name} and {key[1].furniture_name}: {value}")
 
 # Find travel lines between rooms
-travel_lines_between_rooms = find_travel_lines_between_rooms(rooms, graph_rooms)
+travel_lines_r = find_travel_lines_between_rooms(rooms, graph_rooms)
 
 # Print travel lines between rooms
 print("\nTravel lines between rooms:")
-for room_pair, line_between_rooms in travel_lines_between_rooms.items():
+for room_pair, line_between_rooms in travel_lines_r.items():
     print(f"Travel line between {room_pair[0].room_name} and {room_pair[1].room_name}: {line_between_rooms}")
 
-# Modify the code where rooms are read from CSV to include other rooms
-def main():
-    # File path for the CSV file
-    csv_file_path2 = r'C:\Users\user\Downloads\rooms_data.csv'  # Adjust the file path accordingly
+# File path for the CSV file
+csv_file_path2 = r'C:\Users\user\Downloads\rooms_data.csv'  # Adjust the file path accordingly
 
-    # Read rooms data from CSV file
-    rooms = read_rooms_from_csv(csv_file_path2)
+# Read rooms data from CSV file
+rooms = read_rooms_from_csv(csv_file_path2)
 
-    # Iterate through each room to process
-    for room in rooms:
-        # Get other rooms excluding the current room
-        other_rooms = room.get_other_rooms(rooms)
+# Iterate through each room to process
+for room in rooms:
+    # Get other rooms excluding the current room
+    other_rooms = room.get_other_rooms(rooms)
 
-        # Now you can pass other_rooms to any method that requires it, such as calculate_ventilation_walls
-        # e.g., room.calculate_ventilation_walls(other_rooms)
+    # Now you can pass other_rooms to any method that requires it, such as calculate_ventilation_walls
+    # e.g., room.calculate_ventilation_walls(other_rooms)
 
-        # Example usage:
-        print(f"Other rooms in the layout for room {room.room_name}:")
-        for other_room in other_rooms:
-            print(other_room.room_name)
+    # Example usage:
+    print(f"Other rooms in the layout for room {room.room_name}:")
+    for other_room in other_rooms:
+        print(other_room.room_name)
 
-if __name__ == "__main__":
-    main()
     #function to calculate ventilation walls which lack obstruction at a given distance outwards
     def calculate_centroid(self):
         num_vertices = len(self.vertices)
@@ -959,8 +911,6 @@ if __name__ == "__main__":
 
     def ventilation_constraint(self, allowance=0):
         return self.ventilation_percentage - (self.desired_ventilation_percentage + allowance)
-
-
 def shoelace_formula(x_y):
     x_y = np.array(x_y)
     x_y = x_y.reshape(-1, 2)
@@ -1008,8 +958,6 @@ def calculate_angle(vector1, vector2):
 
     return angle
 
-# function to create shape of polygon
-def main():
     # Get the number of sides of the outer polygon from the user
     num_sides = int(input("Enter the number of sides of the outer polygon: "))
 
@@ -1197,15 +1145,15 @@ for room in rooms:
 
 
 # Generate travel lines between furniture
-travel_lines_furniture = find_travel_lines_between_furniture(furniture_list, visibility_graph_furniture)
+travel_lines_f = find_travel_lines_between_furniture(furniture_list, visibility_graph_furniture)
 
 # Calculate lengths of travel lines for furniture
-travel_line_lengths_furniture = [calculate_travel_line_length(travel_line_furniture) for travel_line_furniture in travel_lines_furniture]
+travel_line_lengths_furniture = [calculate_travel_line_length(travel_line_furniture) for travel_line_furniture in travel_lines_f]
 
 # Find travel lines between rooms
-travel_lines_rooms = find_travel_lines_between_rooms(rooms,visibility_graph_rooms)
+travel_lines_r = find_travel_lines_between_rooms(rooms,visibility_graph_rooms)
 # Calculate lengths of travel lines for rooms
-travel_line_lengths_rooms = [calculate_travel_line_length(travel_line_room) for travel_line_room in travel_lines_rooms]
+travel_line_lengths_rooms = [calculate_travel_line_length(travel_line_room) for travel_line_room in travel_lines_r]
 # Define the lengths and standard deviations for both furniture and rooms
 if travel_line_lengths_furniture:
     mean_travel_line_length_furniture = np.mean(travel_line_lengths_furniture)
@@ -1222,15 +1170,15 @@ else:
     travel_line_std_dev_rooms = 0
 
 # --- Visibility Graph + Doorline start/goal collection ---
-def gather_offset_door_vertices(furn_list):
+def gather_door_vertices(furn_list):
     verts = []
     for f in furn_list:
-        for dl in f.offset_doorlines:
+        for dl in f.doorlines:
             verts.extend(dl)
     return set(verts)
 
-start_goal_vertices_f = gather_offset_door_vertices(furniture_list)
-start_goal_vertices_r = gather_offset_door_vertices(
+start_goal_vertices_f = gather_door_vertices(furniture_list)
+start_goal_vertices_r = gather_door_vertices(
     sum((r.furniture for r in rooms), [])
 )
 
@@ -1276,8 +1224,8 @@ travel_f = {}
 for f1 in furniture_list:
     for f2 in furniture_list:
         if f1!=f2:
-            for s in f1.offset_doorlines:
-                for g in f2.offset_doorlines:
+            for s in f1.doorlines:
+                for g in f2.doorlines:
                     for sv in s:
                         for gv in g:
                             path = astar(Gf, sv, gv)
@@ -1290,8 +1238,8 @@ for r1 in rooms:
         if r1!=r2:
             for f1 in r1.furniture:
                 for f2 in r2.furniture:
-                    for s in f1.offset_doorlines:
-                        for g in f2.offset_doorlines:
+                    for s in f1.doorlines:
+                        for g in f2.doorlines:
                             for sv in s:
                                 for gv in g:
                                     path = astar(Gr, sv, gv)
@@ -1402,11 +1350,11 @@ def no_overlap_constraint(rooms, furniture_list):
     return 1.0
 
 travel_lines = []
-for key, line in travel_lines_between_rooms.items():
+for key, line in travel_lines_r.items():
     room1, room2, start, end = key
     travel_lines.append({'rooms': (room1.room_name, room2.room_name), 'start': start, 'end': end})
 
-for key, line in travel_lines_between_furniture.items():
+for key, line in travel_lines_f.items():
     furniture1, furniture2, start, end = key
     travel_lines.append({'rooms': (furniture1.room, furniture2.room), 'start': start, 'end': end})
 
@@ -1435,22 +1383,21 @@ def proximity_penalty(rooms, proximity_matrix, travel_lines, room_names):
 def gather_doorline_endpoints(entities):
     endpoints = []
     for ent in entities:
-        for doorline in getattr(ent, 'offset_doorlines', []):
+        for doorline in getattr(ent, 'doorlines', []):
             endpoints.extend(doorline)
     return endpoints
-from shapely.geometry import LineString
 
 def build_travel_lines(entities, min_width=0.8):
     """
-    entities: list of Room or Furniture objects with offset_doorlines
+    entities: list of Room or Furniture objects with doorlines
     Returns: dict with (entity1, entity2) as key and LineString as value
     """
     travel_lines = {}
     for i, e1 in enumerate(entities):
         for j, e2 in enumerate(entities):
             if i < j:
-                for dl1 in getattr(e1, 'offset_doorlines', []):
-                    for dl2 in getattr(e2, 'offset_doorlines', []):
+                for dl1 in getattr(e1, 'doorlines', []):
+                    for dl2 in getattr(e2, 'doorlines', []):
                         for p1 in dl1:
                             for p2 in dl2:
                                 line = LineString([p1, p2])
@@ -1621,8 +1568,6 @@ populate_rooms_with_furniture(rooms, furniture_data)
 if room.concave_hull and hasattr(room.concave_hull, 'exterior'):
     coords = list(room.concave_hull.exterior.coords)
 
-from shapely.geometry import Polygon
-
 def is_valid_room(room, other_rooms=[]):
     poly = room.offset_polygon
     if poly is None or poly.is_empty or poly.geom_type != 'Polygon':
@@ -1668,8 +1613,8 @@ def build_travel_lines(rooms, graph_rooms):
     for i, room1 in enumerate(rooms):
         for j, room2 in enumerate(rooms):
             if i < j:
-                for dl1 in room1.offset_doorlines:
-                    for dl2 in room2.offset_doorlines:
+                for dl1 in room1.doorlines:
+                    for dl2 in room2.doorlines:
                         try:
                             path = a_star(graph_rooms, dl1[0], dl2[0])
                             if path:
@@ -1719,10 +1664,10 @@ def run_optimization(rooms, travel_lines, furniture_list, desired_angles_per_roo
     for room in rooms:
         constraints.append({'type': 'ineq', 'fun': lambda x, r=room: right_angle_constraint(r)})
 # Add other constraints as needed (e.g., furniture containment)
-    x0 = np.ones(len(rooms))  # dummy variable for minimize
+    x0 = 1 # dummy variable for minimize
     result = minimize(objective, x0, constraints=constraints, options={'maxiter': 1000000,
     'disp': True,
-    'ftol': 1e-3,})
+    'ftol': 1e-9,})
 
     return result, travel_lines
 
@@ -1767,14 +1712,13 @@ for room in rooms:
         print(f"[Error] Room {room.room_name} does not have enough points after optimization.")
         room.concave_hull = None
         room.offset_polygon = None
-          
+        
 # ==============================
 # PLOTTING
 # ==============================
 
 def plot_and_save_layout(rooms, travel_lines, filename="optimized_layout.png"):
-    import matplotlib.pyplot as plt
-    import os
+
     plt.figure(figsize=(10, 10))
     ax = plt.gca()
 
@@ -1790,9 +1734,9 @@ def plot_and_save_layout(rooms, travel_lines, filename="optimized_layout.png"):
         ax.text(centroid.x, centroid.y, room.room_name, fontsize=12, color='navy', ha='center')
 
         # Plot Room Doorlines
-        for dl in getattr(room, 'offset_doorlines', []):
+        for dl in getattr(room, 'doorlines', []):
             for p in dl:
-                ax.plot(*zip(*dl), color='orange', linewidth=3, label='Room Doorline')
+                ax.plot(*zip(*dl), color='orange', linewidth=30, label='Room Doorline')
 
         # Plot Furniture
         for furn in room.furniture:
@@ -1802,15 +1746,27 @@ def plot_and_save_layout(rooms, travel_lines, filename="optimized_layout.png"):
             ax.text(np.mean(fx), np.mean(fy), furn.furniture_name, fontsize=9, color='darkred', ha='center')
             
             # Plot Furniture Doorlines
-            for dl in getattr(furn, 'offset_doorlines', []):
+            for dl in getattr(furn, 'doorlines', []):
                 for p in dl:
-                    ax.plot(*zip(*dl), color='orange', linewidth=2, linestyle='--')
+                    ax.plot(*zip(*dl), color='orange', linewidth=20, linestyle='--')
 
-    # Plot Travel Lines
-    for line in travel_lines:
-        if isinstance(line, LineString):
-            x, y = line.xy
-            ax.plot(x, y, 'g--', linewidth=2, alpha=0.7, label='Travel Line')
+        # Plot room offset polygons
+        for room in rooms:
+            if room.offset_polygon:
+                x, y = room.offset_polygon.exterior.xy
+                plt.plot(x, y, label=f"Room: {room.room_name}")
+
+        # Plot travel lines between rooms
+        for line in travel_lines_r.values():
+            if isinstance(line, LineString):
+                x, y = line.xy
+                plt.plot(x, y, 'r--', linewidth=2, label='Travel Line (Room)')
+
+        # Plot travel lines between furniture
+        for line in travel_lines_f.values():
+            if isinstance(line, LineString):
+                x, y = line.xy
+                plt.plot(x, y, 'g--', linewidth=1, label='Travel Line (Furniture)')
 
     ax.set_aspect('equal')
     ax.set_title("Optimized Layout with Travel and Doorlines")
@@ -1822,6 +1778,67 @@ def plot_and_save_layout(rooms, travel_lines, filename="optimized_layout.png"):
     plt.savefig(path, bbox_inches='tight', dpi=300)
     print(f"Plot saved to: {path}")
     plt.show()
+
+def export_to_geojson(rooms, travel_lines, filename="layout.geojson"):
+    features = []
+
+    # Rooms
+    for room in rooms:
+        if room.offset_polygon:
+            features.append(geojson.Feature(
+                geometry=mapping(room.offset_polygon),
+                properties={"type": "room", "name": room.room_name}
+            ))
+        for furn in room.furniture:
+            features.append(geojson.Feature(
+                geometry=geojson.Polygon([furn.vertices]),
+                properties={"type": "furniture", "name": furn.furniture_name}
+            ))
+            for dl in getattr(furn, 'doorlines', []):
+                features.append(geojson.Feature(
+                    geometry=geojson.LineString(dl),
+                    properties={"type": "doorline", "parent": furn.furniture_name}
+                ))
+
+    # Travel lines
+    for line in travel_lines:
+        if isinstance(line, LineString):
+            features.append(geojson.Feature(
+                geometry=mapping(line),
+                properties={"type": "travel_line"}
+            ))
+
+    feature_collection = geojson.FeatureCollection(features)
+    downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+    path = os.path.join(downloads, filename)
+    with open(path, 'w') as f:
+        geojson.dump(feature_collection, f)
+    print(f"GeoJSON exported to: {path}")
+
+def export_to_dxf(rooms, travel_lines, filename="layout.dxf"):
+    doc = ezdxf.new()
+    msp = doc.modelspace()
+
+    for room in rooms:
+        if room.offset_polygon:
+            points = list(room.offset_polygon.exterior.coords)
+            msp.add_lwpolyline(points, close=True, dxfattribs={"layer": "Rooms"})
+        for furn in room.furniture:
+            msp.add_lwpolyline(furn.vertices, close=True, dxfattribs={"layer": "Furniture"})
+            for dl in getattr(furn, 'doorlines', []):
+                msp.add_lwpolyline(dl, dxfattribs={"layer": "FurnitureDoorlines"})
+
+        for dl in getattr(room, 'doorlines', []):
+            msp.add_lwpolyline(dl, dxfattribs={"layer": "RoomDoorlines"})
+
+    for line in travel_lines:
+        if isinstance(line, LineString):
+            msp.add_lwpolyline(list(line.coords), dxfattribs={"layer": "TravelLines"})
+
+    downloads = os.path.join(os.path.expanduser("~"), "Downloads")
+    path = os.path.join(downloads, filename)
+    doc.saveas(path)
+    print(f"DXF exported to: {path}")
 
 def main():
 
@@ -1849,10 +1866,9 @@ def main():
                     print(f"[Error] Failed to create Polygon for {room.room_name} from concave hull: {e}")
             else:
                 print(f"[Error] Room {room.room_name} has no geometry and no concave hull.")
-
     # 4. Build Travel Lines
     # Assume these have been properly constructed earlier in your code
-    start_goal_vertices_f = gather_offset_door_vertices(furniture_list)
+    start_goal_vertices_f = gather_door_vertices(furniture_list)
     all_furniture_obstacles = [f.offset_polygon for f in furniture_list if f.offset_polygon]
 
     # Now call with both arguments
@@ -1860,7 +1876,7 @@ def main():
 
     travel_lines_f = find_travel_lines_between_furniture(furniture_list, visibility_graph_f)
 
-    start_goal_vertices_r = gather_offset_door_vertices(sum((r.furniture for r in rooms), []))
+    start_goal_vertices_r = gather_door_vertices(sum((r.furniture for r in rooms), []))
     all_room_obstacles = [r.offset_polygon for r in rooms if r.offset_polygon]
 
     visibility_graph_r = build_visibility_graph(start_goal_vertices_r, all_room_obstacles)
@@ -1903,71 +1919,13 @@ def main():
     proximity_matrix_rooms,         # <-- and this
     furniture_proximity_dict        # <-- and this
 )
-
     # 7. Plot Result
     plot_and_save_layout(rooms, list(travel_lines_r.values()))
-
+    export_to_geojson(rooms, travel_lines, filename="layout.geojson")
+    export_to_dxf(rooms, travel_lines, filename="layout.dxf")
 
 if __name__ == "__main__":
     main()
 
-def export_to_geojson(rooms, travel_lines, filename="layout.geojson"):
-    features = []
 
-    # Rooms
-    for room in rooms:
-        if room.offset_polygon:
-            features.append(geojson.Feature(
-                geometry=mapping(room.offset_polygon),
-                properties={"type": "room", "name": room.room_name}
-            ))
-        for furn in room.furniture:
-            features.append(geojson.Feature(
-                geometry=geojson.Polygon([furn.vertices]),
-                properties={"type": "furniture", "name": furn.furniture_name}
-            ))
-            for dl in getattr(furn, 'offset_doorlines', []):
-                features.append(geojson.Feature(
-                    geometry=geojson.LineString(dl),
-                    properties={"type": "doorline", "parent": furn.furniture_name}
-                ))
 
-    # Travel lines
-    for line in travel_lines:
-        if isinstance(line, LineString):
-            features.append(geojson.Feature(
-                geometry=mapping(line),
-                properties={"type": "travel_line"}
-            ))
-
-    feature_collection = geojson.FeatureCollection(features)
-    downloads = os.path.join(os.path.expanduser("~"), "Downloads")
-    path = os.path.join(downloads, filename)
-    with open(path, 'w') as f:
-        geojson.dump(feature_collection, f)
-    print(f"GeoJSON exported to: {path}")
-
-def export_to_dxf(rooms, travel_lines, filename="layout.dxf"):
-    doc = ezdxf.new()
-    msp = doc.modelspace()
-
-    for room in rooms:
-        if room.offset_polygon:
-            points = list(room.offset_polygon.exterior.coords)
-            msp.add_lwpolyline(points, close=True, dxfattribs={"layer": "Rooms"})
-        for furn in room.furniture:
-            msp.add_lwpolyline(furn.vertices, close=True, dxfattribs={"layer": "Furniture"})
-            for dl in getattr(furn, 'offset_doorlines', []):
-                msp.add_lwpolyline(dl, dxfattribs={"layer": "FurnitureDoorlines"})
-
-        for dl in getattr(room, 'offset_doorlines', []):
-            msp.add_lwpolyline(dl, dxfattribs={"layer": "RoomDoorlines"})
-
-    for line in travel_lines:
-        if isinstance(line, LineString):
-            msp.add_lwpolyline(list(line.coords), dxfattribs={"layer": "TravelLines"})
-
-    downloads = os.path.join(os.path.expanduser("~"), "Downloads")
-    path = os.path.join(downloads, filename)
-    doc.saveas(path)
-    print(f"DXF exported to: {path}")

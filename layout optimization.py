@@ -1692,7 +1692,7 @@ def run_optimization(rooms, travel_lines, furniture_list, desired_angles_per_roo
     for room in rooms:
         constraints.append({'type': 'ineq', 'fun': lambda x, r=room: right_angle_constraint(r)})
 # Add other constraints as needed (e.g., furniture containment)
-    x0 = np.ones(len(rooms))  # dummy variable for minimize
+    x0 = 1
     result = minimize(objective, x0, constraints=constraints, options={'maxiter': 10000,
     'disp': True,
     'fatol': 1e-6,})
